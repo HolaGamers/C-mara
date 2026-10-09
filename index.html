@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>Cámara iPad → PRISM</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;color:#fff;overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+
+  /* ---------- MODO RECEPTOR: solo el <video> ---------- */
+  body.receiver{cursor:none;background:#000}
+  body.receiver video{position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;background:#000;border:0;outline:0}
+  body.receiver ::-webkit-scrollbar{display:none}
+
+  /* ---------- MODO CÁMARA ---------- */
+  #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;background:#111;padding:24px;text-align:center}
+  #start h1{font-size:22px;font-weight:600;margin:0;color:#ddd}
+  #start p{margin:0;color:#888;font-size:15px;max-width:420px;line-height:1.4}
+  #startBtn{font-size:24px;font-weight:700;padding:26px 40px;border:0;border-radius:18px;background:#fff;color:#000;cursor:pointer}
+  #startBtn:active{opacity:.7}
+  #err{color:#ff6b6b;font-size:15px;max-width:420px;min-height:20px}
+
+  #app{position:fixed;inset:0;display:none;background:#000}
+  #preview{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+  #status{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:10px;right:10px;
+    font-size:13px;color:#ccc;background:rgba(0,0,0,.55);padding:8px 12px;border-radius:10px;
+    display:flex;justify-content:space-between;gap:10px}
+  #dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#e5a100;margin-right:8px}
+  #dot.ok{background:#22c55e}
+  #dot.bad{background:#ef4444}
+
+  #controls{position:absolute;left:0;right:0;bottom:0;padding:12px 12px calc(env(safe-area-inset-bottom,0px) + 12px);
+    background:rgba(0,0,0,.72);display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  #controls button{min-height:68px;font-size:18px;font-weight:600;border:0;border-radius:14px;
+    background:#2a2a2a;color:#fff;cursor:pointer;padding:10px}
+  #controls button:active{opacity:.7}
+  #controls button.off{background:#7f1d1d}
+  #copyBtn{grid-column:1 / -1;background:#16a34a !important;font-size:20px !important;min-height:74px !important}
+</style>
+</head>
+<body>
+<script>
+(function () {
+  'use strict';
+
+  // ID FIJO de la cámara: cámbialo UNA vez por algo tuyo y difícil de adivinar (solo letras, números y guiones).
+  // El link para PRISM será siempre el mismo: tuweb/?stream=true&id=<este ID>
+  var FIXED_ID = 'ipad-malis-cam-k7x29';
+
+  var params = new URLSearchParams(location.search);
+  var isReceiver = params.get('stream') === 'true' && !!params.get('id');
+  var ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+
+  if (isReceiver) initReceiver(params.get('id'));
+  else initCamera();
+
+  /* =====================================================
+     MODO RECEPTOR (PRISM)
+     ===================================================== */
+  function initReceiver(camId) {
+    document.body.className = 'receiver';
+
+    var video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('autoplay', '');
+    video.muted = false;
+    video.controls = false;
+    document.body.appendChild(video);
+
+    var peer = null, conn = null, timer = null;
+
+    function tryPlay() {
+      var p = video.play();
+      if (p && p.catch) {
+        p.catch(function () {
+          // Autoplay con sonido bloqueado (navegador normal): reproducir mudo y activar sonido al primer toque.
+          video.muted = true;
+          video.play().catch(function () {});
+          var unmute = function () {
+            video.muted = false;
+            video.play().catch(function () {});
+            window.removeEventListener('pointerdown', unmute);
+            window.removeEventListener('keydown', unmute);
+          };
+          window.addEventListener('pointerdown', unmute);
+          window.addEventListener('keydown', unmute);
+        });
+      }
+    }
+
+    function lowLatency(call) {
+      try {
+        call.peerConnection.getReceivers().forEach(function (r) {
+          if ('playoutDelayHint' in r) r.playoutDelayHint = 0;
+          if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0;
+        });
+      } catch (e) {}
+    }
+
+    function retry() {
+      if (timer) return;
+      timer = setTimeout(function () {
+        timer = null;
+        if (!peer || peer.destroyed) { start(); return; }
+        if (peer.disconnected) { try { peer.reconnect(); } catch (e) {} }
+        connect();
+      }, 3000);
+    }
+
+    function connect() {
+      if (!peer || peer.destroyed || peer.disconnected || !peer.open) { retry(); return; }
+      try { if (conn) conn.close(); } catch (e) {}
+      conn = peer.connect(camId, { reliable: true });
+      conn.on('open', function () {});
+      conn.on('close', retry);
+      conn.on('error', retry);
+    }
+
+    function start() {
+      try { if (peer) peer.destroy(); } catch (e) {}
+      peer = new Peer({ config: ICE });
+      peer.on('open', connect);
+      peer.on('call', function (call) {
+        call.answer(); // el receptor no envía nada
+        call.on('stream', function (remote) {
+          video.srcObject = remote;
+          tryPlay();
+          lowLatency(call);
+        });
+        call.on('close', retry);
+        call.on('error', retry);
+        try {
+          call.peerConnection.oniceconnectionstatechange = function () {
+            var s = call.peerConnection.iceConnectionState;
+            if (s === 'failed' || s === 'closed') retry();
+          };
+        } catch (e) {}
+      });
+      peer.on('disconnected', function () { try { peer.reconnect(); } catch (e) {} });
+      peer.on('error', function (err) {
+        // peer-unavailable = la cámara aún no está encendida; reintentar
+        retry();
+      });
+    }
+
+    start();
+  }
+
+  /* =====================================================
+     MODO CÁMARA (iPad)
+     ===================================================== */
+  function initCamera() {
+    document.body.innerHTML =
+      '<div id="start">' +
+        '<h1>Cámara inalámbrica para PRISM</h1>' +
+        '<p>Toca el botón y acepta los permisos de cámara y micrófono.</p>' +
+        '<button id="startBtn">Activar Cámara y Micrófono</button>' +
+        '<div id="err"></div>' +
+      '</div>' +
+      '<div id="app">' +
+        '<video id="preview" autoplay playsinline muted></video>' +
+        '<div id="status"><span><span id="dot"></span><span id="stxt">Conectando…</span></span><span id="idtxt"></span></div>' +
+        '<div id="controls">' +
+          '<button id="flipBtn">🔄 Cambiar Cámara</button>' +
+          '<button id="vidBtn">📷 Apagar Video</button>' +
+          '<button id="micBtn">🎤 Silenciar</button>' +
+          '<button id="copyBtn">📋 Copiar Link para PRISM</button>' +
+        '</div>' +
+      '</div>';
+
+    var $ = function (id) { return document.getElementById(id); };
+    var stream = null, peer = null, myId = null, facing = 'environment';
+    var calls = {}, wakeLock = null;
+
+    function videoConstraints(mode, exact) {
+      return {
+        facingMode: exact ? { exact: mode } : { ideal: mode },
+        width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }
+      };
+    }
+
+    function setStatus(text, cls) {
+      $('stxt').textContent = text;
+      $('dot').className = cls || '';
+    }
+
+    async function requestWakeLock() {
+      try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+    }
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && stream) requestWakeLock();
+    });
+
+    $('startBtn').addEventListener('click', async function () {
+      $('err').textContent = '';
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        $('err').textContent = 'Este navegador no permite acceder a la cámara (se necesita HTTPS).';
+        return;
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints(facing, false),
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+      } catch (e) {
+        $('err').textContent = 'No se pudo acceder a la cámara/micrófono: ' + (e.name || e.message) +
+          '. Revisa los permisos de Safari.';
+        return;
+      }
+      $('start').style.display = 'none';
+      $('app').style.display = 'block';
+      $('preview').srcObject = stream;
+      $('preview').play().catch(function () {});
+      requestWakeLock();
+      initPeer();
+    });
+
+    /* ---------- PeerJS ---------- */
+    function randomId() {
+      return 'cam-' + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
+    }
+
+    function initPeer() {
+      myId = FIXED_ID;
+      peer = new Peer(myId, { config: ICE });
+
+      peer.on('open', function (id) {
+        $('idtxt').textContent = id;
+        setStatus('Listo. Esperando a PRISM…', 'ok');
+      });
+
+      peer.on('connection', function (conn) {
+        conn.on('open', function () { callReceiver(conn.peer); });
+      });
+
+      peer.on('disconnected', function () {
+        setStatus('Reconectando…', '');
+        try { peer.reconnect(); } catch (e) {}
+      });
+
+      peer.on('error', function (err) {
+        if (err.type === 'unavailable-id') {
+          // El servidor aún tiene registrada la sesión anterior (tarda ~1 min en liberarse): reintentar con el MISMO ID
+          setStatus('ID ocupado, reintentando…', '');
+          try { peer.destroy(); } catch (e) {}
+          setTimeout(initPeer, 4000);
+        } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
+          setStatus('Sin conexión al servidor', 'bad');
+        }
+      });
+    }
+
+    function tuneSender(call) {
+      try {
+        call.peerConnection.getSenders().forEach(function (s) {
+          if (s.track && s.track.kind === 'video') {
+            var p = s.getParameters();
+            if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+            p.encodings[0].maxBitrate = 3000000;
+            s.setParameters(p).catch(function () {});
+          }
+        });
+      } catch (e) {}
+    }
+
+    function callReceiver(rid) {
+      if (!stream) return;
+      if (calls[rid]) { try { calls[rid].close(); } catch (e) {} }
+      var call = peer.call(rid, stream);
+      calls[rid] = call;
+      setStatus('Transmitiendo a PRISM', 'ok');
+      setTimeout(function () { tuneSender(call); }, 1000);
+      call.on('close', function () {
+        if (calls[rid] === call) delete calls[rid];
+        if (!Object.keys(calls).length) setStatus('Listo. Esperando a PRISM…', 'ok');
+      });
+      call.on('error', function () {});
+    }
+
+    /* ---------- Controles ---------- */
+    $('flipBtn').addEventListener('click', async function () {
+      if (!stream) return;
+      var btn = this; btn.disabled = true;
+      var next = facing === 'user' ? 'environment' : 'user';
+      var oldTrack = stream.getVideoTracks()[0];
+      var wasEnabled = oldTrack ? oldTrack.enabled : true;
+      if (oldTrack) oldTrack.stop(); // iOS no permite dos cámaras abiertas a la vez
+      var newStream = null;
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(next, true), audio: false });
+      } catch (e1) {
+        try {
+          newStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(next, false), audio: false });
+        } catch (e2) {
+          // volver a la cámara anterior
+          try { newStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(facing, false), audio: false }); next = facing; } catch (e3) {}
+        }
+      }
+      if (newStream) {
+        var nt = newStream.getVideoTracks()[0];
+        nt.enabled = wasEnabled;
+        if (oldTrack) stream.removeTrack(oldTrack);
+        stream.addTrack(nt);
+        Object.keys(calls).forEach(function (k) {
+          try {
+            calls[k].peerConnection.getSenders().forEach(function (s) {
+              if (s.track === null || (s.track && s.track.kind === 'video')) {
+                if (!s.track || s.track.kind === 'video') s.replaceTrack(nt).catch(function () {});
+              }
+            });
+          } catch (e) {}
+        });
+        $('preview').srcObject = stream;
+        $('preview').play().catch(function () {});
+        facing = next;
+      }
+      btn.disabled = false;
+    });
+
+    $('vidBtn').addEventListener('click', function () {
+      if (!stream) return;
+      var on = true;
+      stream.getVideoTracks().forEach(function (t) { t.enabled = !t.enabled; on = t.enabled; });
+      this.textContent = on ? '📷 Apagar Video' : '📷 Encender Video';
+      this.classList.toggle('off', !on);
+    });
+
+    $('micBtn').addEventListener('click', function () {
+      if (!stream) return;
+      var on = true;
+      stream.getAudioTracks().forEach(function (t) { t.enabled = !t.enabled; on = t.enabled; });
+      this.textContent = on ? '🎤 Silenciar' : '🎤 Activar Micrófono';
+      this.classList.toggle('off', !on);
+    });
+
+    $('copyBtn').addEventListener('click', async function () {
+      if (!myId) return;
+      var link = location.origin + location.pathname + '?stream=true&id=' + encodeURIComponent(myId);
+      var btn = this, original = '📋 Copiar Link para PRISM';
+      var ok = false;
+      try {
+        await navigator.clipboard.writeText(link);
+        ok = true;
+      } catch (e) {
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = link;
+          ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+          document.body.appendChild(ta);
+          ta.focus(); ta.select(); ta.setSelectionRange(0, 99999);
+          ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (e2) {}
+      }
+      if (!ok) window.prompt('Copia este link y pégalo en PRISM:', link);
+      btn.textContent = ok ? '✅ ¡Link copiado!' : original;
+      setTimeout(function () { btn.textContent = original; }, 2000);
+    });
+  }
+})();
+</script>
+</body>
+</html>
