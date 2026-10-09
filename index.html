@@ -13,10 +13,12 @@
   html,body{margin:0;padding:0;width:100%;height:100%;background:#000;color:#fff;overflow:hidden;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 
-  /* ---------- MODO RECEPTOR: solo el <video> ---------- */
+  /* ---------- MODO RECEPTOR: solo el <video> y el overlay ---------- */
   body.receiver{cursor:none;background:#000}
-  body.receiver video{position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;background:#000;border:0;outline:0}
+  body.receiver video{position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;background:#000;border:0;outline:0;z-index:1}
   body.receiver ::-webkit-scrollbar{display:none}
+  body.receiver #ov{position:fixed;z-index:2;display:none;pointer-events:none;overflow:hidden;background:transparent;contain:layout paint style}
+  body.receiver #ov iframe{width:100%;height:100%;border:0;background:transparent;display:block}
 
   /* ---------- MODO CÁMARA ---------- */
   #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -28,21 +30,51 @@
   #err{color:#ff6b6b;font-size:15px;max-width:420px;min-height:20px}
 
   #app{position:fixed;inset:0;display:none;background:#000}
-  #preview{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
-  #status{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);left:10px;right:10px;
+  #stage{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000;overflow:hidden}
+  #preview{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+  #preview.mirror{transform:scaleX(-1)}
+  #grid{position:absolute;inset:0;display:none;pointer-events:none;background-size:100% 100%;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 3 3' preserveAspectRatio='none'%3E%3Cpath d='M1 0V3M2 0V3M0 1H3M0 2H3' stroke='white' stroke-opacity='.4' stroke-width='1' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E")}
+
+  #status{position:absolute;z-index:3;top:calc(env(safe-area-inset-top,0px) + 10px);left:10px;right:10px;
     font-size:13px;color:#ccc;background:rgba(0,0,0,.55);padding:8px 12px;border-radius:10px;
     display:flex;justify-content:space-between;gap:10px}
+  #stats{font-size:12px;color:#9ca3af;font-variant-numeric:tabular-nums;white-space:nowrap}
   #dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#e5a100;margin-right:8px}
   #dot.ok{background:#22c55e}
   #dot.bad{background:#ef4444}
 
-  #controls{position:absolute;left:0;right:0;bottom:0;padding:12px 12px calc(env(safe-area-inset-bottom,0px) + 12px);
-    background:rgba(0,0,0,.72);display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-  #controls button{min-height:68px;font-size:18px;font-weight:600;border:0;border-radius:14px;
-    background:#2a2a2a;color:#fff;cursor:pointer;padding:10px}
+  #controls{position:absolute;z-index:3;left:0;right:0;bottom:0;padding:12px 12px calc(env(safe-area-inset-bottom,0px) + 12px);
+    background:rgba(0,0,0,.72);display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  #controls button{min-height:64px;font-size:12px;font-weight:600;border:0;border-radius:14px;background:#262626;color:#fff;
+    cursor:pointer;padding:8px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;line-height:1.1}
+  #controls button b{font-size:22px;font-weight:400}
   #controls button:active{opacity:.7}
   #controls button.off{background:#7f1d1d}
-  #copyBtn{grid-column:1 / -1;background:#16a34a !important;font-size:20px !important;min-height:74px !important}
+  #controls button:disabled{opacity:.5}
+  #copyBtn{grid-column:1 / -1;background:#16a34a !important;font-size:18px !important;min-height:58px !important;flex-direction:row !important}
+
+  #ovlive{position:absolute;z-index:1;display:none;pointer-events:none;overflow:hidden;background:transparent;contain:layout paint style}
+  #ovlive iframe{width:100%;height:100%;border:0;background:transparent;display:block}
+  #ovbox{position:absolute;z-index:2;display:none;border:2px dashed #38bdf8;background:rgba(56,189,248,.07);touch-action:none;cursor:move}
+  #ovbox span{position:absolute;left:8px;top:6px;font-size:13px;color:#e0f2fe;pointer-events:none}
+  #ovgrip{position:absolute;right:0;bottom:0;width:46px;height:46px;touch-action:none;
+    background:linear-gradient(135deg,transparent 50%,#38bdf8 50%)}
+
+  .panel{position:absolute;z-index:4;left:0;right:0;bottom:0;display:none;gap:10px;
+    padding:12px 12px calc(env(safe-area-inset-bottom,0px) + 12px);background:rgba(0,0,0,.88)}
+  .panel input[type=url]{width:100%;font-size:16px;padding:14px;border:1px solid #444;border-radius:12px;background:#1a1a1a;color:#fff;
+    -webkit-user-select:text;user-select:text}
+  .panel input[type=range]{width:100%;height:32px}
+  .panel .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .panel button{min-height:52px;font-size:16px;font-weight:600;border:0;border-radius:12px;background:#2a2a2a;color:#fff;cursor:pointer}
+  .panel button:active{opacity:.7}
+  .panel button.on{background:#1d4ed8}
+  .lbl{font-size:12px;color:#9ca3af;margin-bottom:4px}
+  #ovApply{background:#16a34a !important}
+  #zoomRow{display:none}
+  #ovMsg{font-size:13px;color:#9ca3af;min-height:16px}
+  #ovMsg.bad{color:#ff6b6b}
 </style>
 </head>
 <body>
@@ -58,6 +90,25 @@
   var isReceiver = params.get('stream') === 'true' && !!params.get('id');
   var ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 
+  var QUALITY = {
+    '720p30':  { w: 1280, h: 720,  fps: 30, br: 3000000 },
+    '1080p30': { w: 1920, h: 1080, fps: 30, br: 6000000 },
+    '1080p60': { w: 1920, h: 1080, fps: 60, br: 9000000 }
+  };
+
+  function cleanUrl(u) {
+    u = String(u || '').trim();
+    if (!u) return '';
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    try {
+      var p = new URL(u);
+      return (p.protocol === 'http:' || p.protocol === 'https:') ? p.href : '';
+    } catch (e) { return ''; }
+  }
+
+  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+  function num(v, d) { v = Number(v); return isFinite(v) ? v : d; }
+
   if (isReceiver) initReceiver(params.get('id'));
   else initCamera();
 
@@ -72,11 +123,65 @@
     video.playsInline = true;
     video.setAttribute('playsinline', '');
     video.setAttribute('autoplay', '');
+    video.disablePictureInPicture = true;
     video.muted = false;
     video.controls = false;
     document.body.appendChild(video);
 
     var peer = null, conn = null, timer = null;
+
+    /* ---------- overlay ---------- */
+    var ovWrap = document.createElement('div');
+    ovWrap.id = 'ov';
+    document.body.appendChild(ovWrap);
+    var ovFrame = null, ovSrc = '', lastCfg = '';
+
+    function applyOverlay(cfg) {
+      if (!cfg || typeof cfg !== 'object') return;
+      var key = JSON.stringify(cfg);
+      if (key === lastCfg) return;
+      lastCfg = key;
+
+      var url = cleanUrl(cfg.url);
+      if (!url || !cfg.on) {
+        ovWrap.style.display = 'none';
+        if (ovFrame) { ovWrap.removeChild(ovFrame); ovFrame = null; ovSrc = ''; }
+        return;
+      }
+
+      var x = clamp(num(cfg.x, 68), 0, 100);
+      var y = clamp(num(cfg.y, 8), 0, 100);
+      var w = clamp(num(cfg.w, 30), 5, 100 - x);
+      var h = clamp(num(cfg.h, 60), 5, 100 - y);
+      ovWrap.style.left = x + '%';
+      ovWrap.style.top = y + '%';
+      ovWrap.style.width = w + '%';
+      ovWrap.style.height = h + '%';
+      ovWrap.style.display = 'block';
+
+      // solo se recarga si cambió el link
+      if (url !== ovSrc) {
+        if (ovFrame) ovWrap.removeChild(ovFrame);
+        ovFrame = document.createElement('iframe');
+        ovFrame.setAttribute('allowtransparency', 'true');
+        ovFrame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+        ovFrame.setAttribute('referrerpolicy', 'no-referrer');
+        ovFrame.src = url;
+        ovWrap.appendChild(ovFrame);
+        ovSrc = url;
+      }
+    }
+
+    function onData(d) {
+      if (!d || d.t !== 'ov') return;
+      applyOverlay(d.cfg);
+      try { localStorage.setItem('prismOv', JSON.stringify(d.cfg)); } catch (e) {}
+    }
+
+    try {
+      var saved = JSON.parse(localStorage.getItem('prismOv'));
+      if (saved) applyOverlay(saved);
+    } catch (e) {}
 
     function tryPlay() {
       var p = video.play();
@@ -120,7 +225,7 @@
       if (!peer || peer.destroyed || peer.disconnected || !peer.open) { retry(); return; }
       try { if (conn) conn.close(); } catch (e) {}
       conn = peer.connect(camId, { reliable: true });
-      conn.on('open', function () {});
+      conn.on('data', onData);
       conn.on('close', retry);
       conn.on('error', retry);
     }
@@ -146,10 +251,7 @@
         } catch (e) {}
       });
       peer.on('disconnected', function () { try { peer.reconnect(); } catch (e) {} });
-      peer.on('error', function (err) {
-        // peer-unavailable = la cámara aún no está encendida; reintentar
-        retry();
-      });
+      peer.on('error', retry);
     }
 
     start();
@@ -167,24 +269,260 @@
         '<div id="err"></div>' +
       '</div>' +
       '<div id="app">' +
-        '<video id="preview" autoplay playsinline muted></video>' +
-        '<div id="status"><span><span id="dot"></span><span id="stxt">Conectando…</span></span><span id="idtxt"></span></div>' +
+        '<div id="stage">' +
+          '<video id="preview" autoplay playsinline muted></video>' +
+          '<div id="ovlive"></div>' +
+          '<div id="grid"></div>' +
+          '<div id="ovbox"><span>Overlay</span><div id="ovgrip"></div></div>' +
+        '</div>' +
+        '<div id="status"><span><span id="dot"></span><span id="stxt">Conectando…</span></span><span id="stats"></span></div>' +
         '<div id="controls">' +
-          '<button id="flipBtn">🔄 Cambiar Cámara</button>' +
-          '<button id="vidBtn">📷 Apagar Video</button>' +
-          '<button id="micBtn">🎤 Silenciar</button>' +
+          '<button id="flipBtn"><b>🔄</b><span>Cámara</span></button>' +
+          '<button id="vidBtn"><b>📷</b><span>Video</span></button>' +
+          '<button id="micBtn"><b>🎤</b><span>Mic</span></button>' +
+          '<button id="setBtn"><b>⚙️</b><span>Ajustes</span></button>' +
+          '<button id="ovBtn"><b>🧩</b><span>Overlay</span></button>' +
           '<button id="copyBtn">📋 Copiar Link para PRISM</button>' +
+        '</div>' +
+        '<div id="setPanel" class="panel">' +
+          '<div><div class="lbl">Calidad</div>' +
+            '<div class="row3" id="qRow">' +
+              '<button data-q="720p30">720p 30</button>' +
+              '<button data-q="1080p30">1080p 30</button>' +
+              '<button data-q="1080p60">1080p 60</button>' +
+            '</div></div>' +
+          '<div id="zoomRow"><div class="lbl">Zoom</div><input id="zoom" type="range" min="1" max="1" step="0.1" value="1"></div>' +
+          '<div class="row3">' +
+            '<button id="gridBtn">Cuadrícula</button>' +
+            '<button id="mirBtn">Espejo</button>' +
+            '<button id="chatBtn">Chat en iPad</button>' +
+          '</div>' +
+          '<div class="row3" style="grid-template-columns:1fr"><button id="setDone">Listo</button></div>' +
+        '</div>' +
+        '<div id="ovPanel" class="panel">' +
+          '<input id="ovUrl" type="url" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Pega aquí el link del overlay">' +
+          '<div id="ovMsg">Arrastra el cuadro para moverlo y la esquina para cambiar el tamaño.</div>' +
+          '<div class="row3">' +
+            '<button id="ovApply">Aplicar</button>' +
+            '<button id="ovToggle">Ocultar</button>' +
+            '<button id="ovDone">Listo</button>' +
+          '</div>' +
         '</div>' +
       '</div>';
 
     var $ = function (id) { return document.getElementById(id); };
     var stream = null, peer = null, myId = null, facing = 'environment';
-    var calls = {}, wakeLock = null;
+    var calls = {}, wakeLock = null, busy = false;
+    var dataConns = {};
 
+    /* ---------- ajustes ---------- */
+    var prefs = { q: '1080p30', grid: false, mirror: true, chat: true };
+    try {
+      var ps = JSON.parse(localStorage.getItem('camSet'));
+      if (ps && typeof ps === 'object') {
+        if (QUALITY[ps.q]) prefs.q = ps.q;
+        prefs.grid = !!ps.grid;
+        prefs.mirror = ps.mirror !== false;
+        prefs.chat = ps.chat !== false;
+      }
+    } catch (e) {}
+
+    function savePrefs() {
+      try { localStorage.setItem('camSet', JSON.stringify(prefs)); } catch (e) {}
+    }
+
+    /* ---------- overlay (config y editor) ---------- */
+    var ovCfg = { url: '', on: false, x: 68, y: 8, w: 30, h: 60 };
+    try {
+      var s = JSON.parse(localStorage.getItem('camOv'));
+      if (s && typeof s === 'object') {
+        ovCfg.url = cleanUrl(s.url);
+        ovCfg.on = !!s.on && !!ovCfg.url;
+        ovCfg.x = clamp(num(s.x, 68), 0, 95);
+        ovCfg.y = clamp(num(s.y, 8), 0, 95);
+        ovCfg.w = clamp(num(s.w, 30), 5, 100 - ovCfg.x);
+        ovCfg.h = clamp(num(s.h, 60), 5, 100 - ovCfg.y);
+      }
+    } catch (e) {}
+
+    var editing = false;
+    var stage = $('stage'), box = $('ovbox'), grip = $('ovgrip');
+
+    function saveOv() {
+      try { localStorage.setItem('camOv', JSON.stringify(ovCfg)); } catch (e) {}
+    }
+
+    function sendOv() {
+      Object.keys(dataConns).forEach(function (k) {
+        var c = dataConns[k];
+        if (c && c.open) { try { c.send({ t: 'ov', cfg: ovCfg }); } catch (e) {} }
+      });
+    }
+
+    var lastSend = 0, pendingSend = null;
+    function sendSoon() {
+      var now = Date.now();
+      if (now - lastSend >= 100) {
+        lastSend = now;
+        sendOv();
+      } else if (!pendingSend) {
+        pendingSend = setTimeout(function () {
+          pendingSend = null;
+          lastSend = Date.now();
+          sendOv();
+        }, 100);
+      }
+    }
+
+    function fitStage() {
+      var w = window.innerWidth, h = window.innerHeight;
+      var sw = w, sh = w * 9 / 16;
+      if (sh > h) { sh = h; sw = h * 16 / 9; }
+      stage.style.width = sw + 'px';
+      stage.style.height = sh + 'px';
+    }
+    window.addEventListener('resize', fitStage);
+    fitStage();
+
+    var live = $('ovlive'), liveFrame = null, liveSrc = '';
+    var drag = null;
+
+    function drawLive() {
+      if (!ovCfg.url || !ovCfg.on || !prefs.chat) {
+        live.style.display = 'none';
+        if (liveFrame) { live.removeChild(liveFrame); liveFrame = null; liveSrc = ''; }
+        return;
+      }
+      live.style.left = ovCfg.x + '%';
+      live.style.top = ovCfg.y + '%';
+      // el tamaño del chat solo cambia al soltar, no mientras arrastras la esquina
+      if (!(drag && drag.mode === 'size')) {
+        live.style.width = ovCfg.w + '%';
+        live.style.height = ovCfg.h + '%';
+      }
+      live.style.display = 'block';
+      if (ovCfg.url !== liveSrc) {
+        if (liveFrame) live.removeChild(liveFrame);
+        liveFrame = document.createElement('iframe');
+        liveFrame.setAttribute('allowtransparency', 'true');
+        liveFrame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+        liveFrame.setAttribute('referrerpolicy', 'no-referrer');
+        liveFrame.src = ovCfg.url;
+        live.appendChild(liveFrame);
+        liveSrc = ovCfg.url;
+      }
+    }
+
+    function drawBox() {
+      drawLive();
+      var show = editing && ovCfg.url && ovCfg.on;
+      box.style.display = show ? 'block' : 'none';
+      box.style.left = ovCfg.x + '%';
+      box.style.top = ovCfg.y + '%';
+      box.style.width = ovCfg.w + '%';
+      box.style.height = ovCfg.h + '%';
+      $('ovToggle').textContent = ovCfg.on ? 'Ocultar' : 'Mostrar';
+    }
+
+    var raf = 0;
+    function redraw() {
+      if (raf) return;
+      raf = requestAnimationFrame(function () { raf = 0; drawBox(); });
+    }
+
+    function setMsg(text, bad) {
+      var m = $('ovMsg');
+      m.textContent = text;
+      m.className = bad ? 'bad' : '';
+    }
+
+    box.addEventListener('pointerdown', function (e) {
+      var r = stage.getBoundingClientRect();
+      drag = {
+        mode: e.target === grip ? 'size' : 'move',
+        sx: e.clientX, sy: e.clientY,
+        c: { x: ovCfg.x, y: ovCfg.y, w: ovCfg.w, h: ovCfg.h },
+        rw: r.width, rh: r.height
+      };
+      try { box.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault();
+    });
+    box.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var dx = (e.clientX - drag.sx) / drag.rw * 100;
+      var dy = (e.clientY - drag.sy) / drag.rh * 100;
+      if (drag.mode === 'move') {
+        ovCfg.x = clamp(drag.c.x + dx, 0, 100 - ovCfg.w);
+        ovCfg.y = clamp(drag.c.y + dy, 0, 100 - ovCfg.h);
+        sendSoon();
+      } else {
+        ovCfg.w = clamp(drag.c.w + dx, 5, 100 - ovCfg.x);
+        ovCfg.h = clamp(drag.c.h + dy, 5, 100 - ovCfg.y);
+      }
+      redraw();
+    });
+    function endDrag() {
+      if (!drag) return;
+      drag = null;
+      saveOv();
+      sendOv();
+      drawBox();
+    }
+    box.addEventListener('pointerup', endDrag);
+    box.addEventListener('pointercancel', endDrag);
+
+    /* ---------- paneles ---------- */
+    function openPanel(id) {
+      $('controls').style.display = 'none';
+      $(id).style.display = 'grid';
+    }
+    function closePanels() {
+      $('setPanel').style.display = 'none';
+      $('ovPanel').style.display = 'none';
+      $('controls').style.display = 'grid';
+    }
+
+    $('ovBtn').addEventListener('click', function () {
+      editing = true;
+      $('ovUrl').value = ovCfg.url;
+      setMsg('Arrastra el cuadro para moverlo y la esquina para cambiar el tamaño.');
+      openPanel('ovPanel');
+      drawBox();
+    });
+
+    $('ovApply').addEventListener('click', function () {
+      var raw = $('ovUrl').value.trim();
+      var u = cleanUrl(raw);
+      if (raw && !u) { setMsg('Ese link no es válido.', true); return; }
+      ovCfg.url = u;
+      ovCfg.on = !!u;
+      $('ovUrl').value = u;
+      setMsg(u ? 'Overlay aplicado.' : 'Overlay quitado.');
+      saveOv();
+      sendOv();
+      drawBox();
+    });
+
+    $('ovToggle').addEventListener('click', function () {
+      if (!ovCfg.url) { setMsg('Primero pega un link y toca Aplicar.', true); return; }
+      ovCfg.on = !ovCfg.on;
+      saveOv();
+      sendOv();
+      drawBox();
+    });
+
+    $('ovDone').addEventListener('click', function () {
+      editing = false;
+      closePanels();
+      drawBox();
+    });
+
+    /* ---------- cámara ---------- */
     function videoConstraints(mode, exact) {
+      var q = QUALITY[prefs.q];
       return {
         facingMode: exact ? { exact: mode } : { ideal: mode },
-        width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }
+        width: { ideal: q.w }, height: { ideal: q.h }, frameRate: { ideal: q.fps }
       };
     }
 
@@ -193,12 +531,121 @@
       $('dot').className = cls || '';
     }
 
+    function idleStatus() {
+      if (Object.keys(calls).length) setStatus('Transmitiendo a PRISM', 'ok');
+      else setStatus('Listo. Esperando a PRISM…', 'ok');
+    }
+
+    function applyMirror() {
+      $('preview').classList.toggle('mirror', prefs.mirror && facing === 'user');
+    }
+
+    function setupZoom() {
+      var t = stream && stream.getVideoTracks()[0];
+      var caps = null;
+      try { caps = t && t.getCapabilities ? t.getCapabilities() : null; } catch (e) {}
+      var row = $('zoomRow');
+      if (caps && caps.zoom && caps.zoom.max > caps.zoom.min) {
+        var z = $('zoom');
+        z.min = caps.zoom.min;
+        z.max = caps.zoom.max;
+        z.step = caps.zoom.step || 0.1;
+        z.value = (t.getSettings && t.getSettings().zoom) || caps.zoom.min;
+        row.style.display = 'block';
+      } else {
+        row.style.display = 'none';
+      }
+    }
+
+    var zoomBusy = false;
+    $('zoom').addEventListener('input', function () {
+      var t = stream && stream.getVideoTracks()[0];
+      if (!t || zoomBusy) return;
+      zoomBusy = true;
+      var v = Number(this.value);
+      t.applyConstraints({ advanced: [{ zoom: v }] }).catch(function () {}).then(function () { zoomBusy = false; });
+    });
+
+    function syncPrefs() {
+      Array.prototype.forEach.call($('qRow').children, function (b) {
+        b.classList.toggle('on', b.getAttribute('data-q') === prefs.q);
+      });
+      $('gridBtn').classList.toggle('on', prefs.grid);
+      $('mirBtn').classList.toggle('on', prefs.mirror);
+      $('chatBtn').classList.toggle('on', prefs.chat);
+      $('grid').style.display = prefs.grid ? 'block' : 'none';
+      applyMirror();
+      drawBox();
+    }
+
     async function requestWakeLock() {
       try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
     }
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible' && stream) requestWakeLock();
     });
+
+    function tuneSender(call) {
+      var q = QUALITY[prefs.q];
+      try {
+        call.peerConnection.getSenders().forEach(function (s) {
+          if (s.track && s.track.kind === 'video') {
+            var p = s.getParameters();
+            if (!p.encodings || !p.encodings.length) p.encodings = [{}];
+            p.encodings[0].maxBitrate = q.br;
+            p.encodings[0].maxFramerate = q.fps;
+            // si la red se apreta, baja resolución antes que congelar la imagen
+            p.degradationPreference = 'maintain-framerate';
+            s.setParameters(p).catch(function () {});
+          }
+        });
+      } catch (e) {}
+    }
+
+    function tuneAll() {
+      Object.keys(calls).forEach(function (k) { tuneSender(calls[k]); });
+    }
+
+    // abre de nuevo la cámara (cambio de lente o de calidad) y la cambia en caliente sin cortar la llamada
+    async function replaceVideo(mode) {
+      if (!stream || busy) return null;
+      busy = true;
+      try {
+        var old = stream.getVideoTracks()[0];
+        var wasOn = old ? old.enabled : true;
+        if (old) old.stop(); // iOS no permite dos cámaras abiertas a la vez
+        var ns = null, used = mode;
+        var tries = [[mode, true], [mode, false], [facing, false]];
+        for (var i = 0; i < tries.length && !ns; i++) {
+          try {
+            ns = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(tries[i][0], tries[i][1]), audio: false });
+            used = tries[i][0];
+          } catch (e) {}
+        }
+        if (!ns) return null;
+        var nt = ns.getVideoTracks()[0];
+        nt.enabled = wasOn;
+        try { nt.contentHint = 'motion'; } catch (e) {}
+        if (old) stream.removeTrack(old);
+        stream.addTrack(nt);
+        Object.keys(calls).forEach(function (k) {
+          try {
+            calls[k].peerConnection.getSenders().forEach(function (sn) {
+              if (sn.track && sn.track.kind === 'video') sn.replaceTrack(nt).catch(function () {});
+            });
+          } catch (e) {}
+        });
+        $('preview').srcObject = stream;
+        $('preview').play().catch(function () {});
+        facing = used;
+        applyMirror();
+        setupZoom();
+        setTimeout(tuneAll, 800);
+        return used;
+      } finally {
+        busy = false;
+      }
+    }
 
     $('startBtn').addEventListener('click', async function () {
       $('err').textContent = '';
@@ -216,30 +663,42 @@
           '. Revisa los permisos de Safari.';
         return;
       }
+      var vt = stream.getVideoTracks()[0];
+      try { if (vt) vt.contentHint = 'motion'; } catch (e) {}
       $('start').style.display = 'none';
       $('app').style.display = 'block';
+      fitStage();
       $('preview').srcObject = stream;
       $('preview').play().catch(function () {});
+      facing = (vt && vt.getSettings && vt.getSettings().facingMode) || facing;
+      setupZoom();
+      syncPrefs();
       requestWakeLock();
       initPeer();
+      setInterval(readStats, 2000);
     });
 
     /* ---------- PeerJS ---------- */
-    function randomId() {
-      return 'cam-' + Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
-    }
-
     function initPeer() {
       myId = FIXED_ID;
       peer = new Peer(myId, { config: ICE });
 
-      peer.on('open', function (id) {
-        $('idtxt').textContent = id;
+      peer.on('open', function () {
         setStatus('Listo. Esperando a PRISM…', 'ok');
       });
 
       peer.on('connection', function (conn) {
-        conn.on('open', function () { callReceiver(conn.peer); });
+        conn.on('open', function () {
+          dataConns[conn.peer] = conn;
+          try { conn.send({ t: 'ov', cfg: ovCfg }); } catch (e) {}
+          callReceiver(conn.peer);
+        });
+        conn.on('close', function () {
+          if (dataConns[conn.peer] === conn) delete dataConns[conn.peer];
+        });
+        conn.on('error', function () {
+          if (dataConns[conn.peer] === conn) delete dataConns[conn.peer];
+        });
       });
 
       peer.on('disconnected', function () {
@@ -259,19 +718,6 @@
       });
     }
 
-    function tuneSender(call) {
-      try {
-        call.peerConnection.getSenders().forEach(function (s) {
-          if (s.track && s.track.kind === 'video') {
-            var p = s.getParameters();
-            if (!p.encodings || !p.encodings.length) p.encodings = [{}];
-            p.encodings[0].maxBitrate = 3000000;
-            s.setParameters(p).catch(function () {});
-          }
-        });
-      } catch (e) {}
-    }
-
     function callReceiver(rid) {
       if (!stream) return;
       if (calls[rid]) { try { calls[rid].close(); } catch (e) {} }
@@ -286,43 +732,44 @@
       call.on('error', function () {});
     }
 
+    /* ---------- estadísticas del envío ---------- */
+    var statBusy = false, prevBytes = 0, prevTime = 0;
+    async function readStats() {
+      var ids = Object.keys(calls);
+      if (!ids.length) {
+        $('stats').textContent = '';
+        prevTime = 0;
+        return;
+      }
+      if (document.hidden || statBusy) return;
+      statBusy = true;
+      try {
+        var rep = await calls[ids[0]].peerConnection.getStats();
+        rep.forEach(function (r) {
+          if (r.type !== 'outbound-rtp' || r.kind !== 'video') return;
+          var parts = [];
+          if (r.frameWidth) parts.push(r.frameWidth + '×' + r.frameHeight);
+          if (r.framesPerSecond) parts.push(Math.round(r.framesPerSecond) + ' fps');
+          if (prevTime && r.timestamp > prevTime && r.bytesSent >= prevBytes) {
+            parts.push(((r.bytesSent - prevBytes) * 8 / ((r.timestamp - prevTime) * 1000)).toFixed(1) + ' Mbps');
+          }
+          prevBytes = r.bytesSent;
+          prevTime = r.timestamp;
+          var t = parts.join(' · ');
+          if (r.qualityLimitationReason && r.qualityLimitationReason !== 'none') {
+            t += ' ⚠ ' + (r.qualityLimitationReason === 'bandwidth' ? 'red' : 'CPU');
+          }
+          $('stats').textContent = t;
+        });
+      } catch (e) {}
+      statBusy = false;
+    }
+
     /* ---------- Controles ---------- */
     $('flipBtn').addEventListener('click', async function () {
-      if (!stream) return;
-      var btn = this; btn.disabled = true;
-      var next = facing === 'user' ? 'environment' : 'user';
-      var oldTrack = stream.getVideoTracks()[0];
-      var wasEnabled = oldTrack ? oldTrack.enabled : true;
-      if (oldTrack) oldTrack.stop(); // iOS no permite dos cámaras abiertas a la vez
-      var newStream = null;
-      try {
-        newStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(next, true), audio: false });
-      } catch (e1) {
-        try {
-          newStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(next, false), audio: false });
-        } catch (e2) {
-          // volver a la cámara anterior
-          try { newStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(facing, false), audio: false }); next = facing; } catch (e3) {}
-        }
-      }
-      if (newStream) {
-        var nt = newStream.getVideoTracks()[0];
-        nt.enabled = wasEnabled;
-        if (oldTrack) stream.removeTrack(oldTrack);
-        stream.addTrack(nt);
-        Object.keys(calls).forEach(function (k) {
-          try {
-            calls[k].peerConnection.getSenders().forEach(function (s) {
-              if (s.track === null || (s.track && s.track.kind === 'video')) {
-                if (!s.track || s.track.kind === 'video') s.replaceTrack(nt).catch(function () {});
-              }
-            });
-          } catch (e) {}
-        });
-        $('preview').srcObject = stream;
-        $('preview').play().catch(function () {});
-        facing = next;
-      }
+      var btn = this;
+      btn.disabled = true;
+      await replaceVideo(facing === 'user' ? 'environment' : 'user');
       btn.disabled = false;
     });
 
@@ -330,7 +777,8 @@
       if (!stream) return;
       var on = true;
       stream.getVideoTracks().forEach(function (t) { t.enabled = !t.enabled; on = t.enabled; });
-      this.textContent = on ? '📷 Apagar Video' : '📷 Encender Video';
+      this.querySelector('b').textContent = on ? '📷' : '🚫';
+      this.querySelector('span').textContent = on ? 'Video' : 'Video off';
       this.classList.toggle('off', !on);
     });
 
@@ -338,8 +786,41 @@
       if (!stream) return;
       var on = true;
       stream.getAudioTracks().forEach(function (t) { t.enabled = !t.enabled; on = t.enabled; });
-      this.textContent = on ? '🎤 Silenciar' : '🎤 Activar Micrófono';
+      this.querySelector('b').textContent = on ? '🎤' : '🔇';
+      this.querySelector('span').textContent = on ? 'Mic' : 'Mic off';
       this.classList.toggle('off', !on);
+    });
+
+    $('setBtn').addEventListener('click', function () { openPanel('setPanel'); });
+    $('setDone').addEventListener('click', closePanels);
+
+    $('qRow').addEventListener('click', async function (e) {
+      var q = e.target.getAttribute && e.target.getAttribute('data-q');
+      if (!q || q === prefs.q || !stream || busy) return;
+      prefs.q = q;
+      savePrefs();
+      syncPrefs();
+      setStatus('Aplicando calidad…', '');
+      await replaceVideo(facing);
+      idleStatus();
+    });
+
+    $('gridBtn').addEventListener('click', function () {
+      prefs.grid = !prefs.grid;
+      savePrefs();
+      syncPrefs();
+    });
+
+    $('mirBtn').addEventListener('click', function () {
+      prefs.mirror = !prefs.mirror;
+      savePrefs();
+      syncPrefs();
+    });
+
+    $('chatBtn').addEventListener('click', function () {
+      prefs.chat = !prefs.chat;
+      savePrefs();
+      syncPrefs();
     });
 
     $('copyBtn').addEventListener('click', async function () {
@@ -365,6 +846,8 @@
       btn.textContent = ok ? '✅ ¡Link copiado!' : original;
       setTimeout(function () { btn.textContent = original; }, 2000);
     });
+
+    syncPrefs();
   }
 })();
 </script>
